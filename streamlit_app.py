@@ -7,13 +7,9 @@ from datetime import datetime
 # Web-Oberfläche Design
 st.set_page_config(page_title="Herzklappen Dashboard Generator", layout="wide")
 st.title("🏥 Herzklappen Dashboard Generator")
-st.markdown("""
-Dieses Tool erstellt ein automatisiertes Master-Dashboard aus Ihrer Klappen-Strukturliste. 
-Laden Sie einfach Ihre Excel-Datei hoch (der Dateiname ist egal).
-""")
+st.markdown("Laden Sie Ihre Excel-Datei hoch, um das vollständige Master-Dashboard (Punkt 1-6) zu erstellen.")
 
-# Datei-Uploader (Akzeptiert jede .xlsx Datei)
-uploaded_file = st.file_uploader("Excel-Datei hier hineinziehen oder klicken", type=["xlsx"])
+uploaded_file = st.file_uploader("Excel-Datei wählen", type=["xlsx"])
 
 def map_to_kpi(e):
     e = str(e).lower()
@@ -26,11 +22,9 @@ def map_to_kpi(e):
 
 if uploaded_file:
     try:
-        # Daten einlesen (Name der Datei ist hier egal)
         df = pd.read_excel(uploaded_file, sheet_name='Daten', skiprows=5, engine='openpyxl')
         df = df[df['Nr.'].notnull()].copy()
         
-        # Berechnungen
         df['Prozedur_Date'] = pd.to_datetime(df['Prozedur'], errors='coerce')
         df['Year'] = df['Prozedur_Date'].dt.year
         df['Month'] = df['Prozedur_Date'].dt.month
@@ -41,13 +35,12 @@ if uploaded_file:
         months_passed = df_2026['Month'].max() or 1
         heute_str = datetime.now().strftime('%d-%m-%Y')
 
-        # Excel-Erstellung im Speicher
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             workbook = writer.book
             ws = workbook.add_worksheet('Master Dashboard')
             
-            # Formate definieren
+            # Formate
             title_f = workbook.add_format({'bold': True, 'size': 14, 'font_color': '#1F4E78', 'bottom': 2})
             date_f = workbook.add_format({'bold': True, 'align': 'right', 'font_color': '#595959'})
             header_f = workbook.add_format({'bold': True, 'bg_color': '#D9E1F2', 'border': 1, 'align': 'center'})
@@ -91,33 +84,46 @@ if uploaded_file:
                 ms = v_short.median() if not v_short.empty else 0
                 ws.write(12+r, 3, ms, green_f if 0 < ms <= 5 else red_f)
 
+            # 3. KLAPPENSPRECHSTUNDE (PUNKT 3 WIEDER DA)
+            ws.write('A18', '3. ZUWEISUNG ÜBER KLAPPENSPRECHSTUNDE', title_f)
+            df['KS_bool'] = df['KS'].apply(lambda x: 1 if str(x).lower() in ['x', '1', 'ja'] else 0)
+            for r, y in enumerate([2025, 2026]):
+                ks_count = df[df['Year'] == y]['KS_bool'].sum()
+                ws.write(19+r, 0, y, cell_f); ws.write(19+r, 1, ks_count, cell_f)
+
             # 4. TAVI-TEAMS
-            ws.write('A22', '4. TAVI-TEAMS 2026', title_f)
+            ws.write('A23', '4. TAVI-TEAMS 2026', title_f)
             tavi_2026 = df_2026[df_2026['KPI_Kat'] == 'TAVI']
             team_stats = tavi_2026['Team'].value_counts().reset_index()
-            ws.write(23, 0, 'Team', header_f); ws.write(23, 1, 'Fälle', header_f); ws.write(23, 2, 'Anteil (%)', header_f)
+            ws.write(24, 0, 'Team', header_f); ws.write(24, 1, 'Fälle', header_f); ws.write(24, 2, 'Anteil (%)', header_f)
             for r, row in enumerate(team_stats.values):
-                ws.write(24+r, 0, row[0], cell_f); ws.write(24+r, 1, row[1], cell_f)
-                ws.write(24+r, 2, row[1]/len(tavi_2026) if len(tavi_2026) > 0 else 0, pct_f)
+                ws.write(25+r, 0, row[0], cell_f); ws.write(25+r, 1, row[1], cell_f)
+                ws.write(25+r, 2, row[1]/len(tavi_2026) if len(tavi_2026) > 0 else 0, pct_f)
 
-            # 5. STRATEGIE & QUALITÄT
-            ws.write('A32', '5. STRATEGIE & QUALITÄT 2026', title_f)
+            # 5. STRATEGIE & QUALITÄT (PASCAL VS ABBOTT WIEDER DA)
+            ws.write('A33', '5. STRATEGIE & QUALITÄT 2026', title_f)
             ev_r = tavi_2026['Device'].str.contains('Evolut', na=False, case=False).mean() if len(tavi_2026) > 0 else 0
-            ws.write(33, 0, 'Evolut-Anteil (Ziel 80%)', cell_f)
-            ws.write(33, 1, ev_r, green_pct_f if ev_r >= 0.8 else red_pct_f if ev_r < 0.7 else yellow_pct_f)
+            ws.write(34, 0, 'Evolut-Anteil (Ziel 80%)', cell_f)
+            ws.write(34, 1, ev_r, green_pct_f if ev_r >= 0.8 else red_pct_f if ev_r < 0.7 else yellow_pct_f)
+            
+            teer_2026 = df_2026[df_2026['KPI_Kat'].isin(['MTEER', 'TTEER'])]
+            edwards = teer_2026['Device'].str.contains('Pascal', na=False, case=False).sum()
+            total_teer = teer_2026['Device'].str.contains('Pascal|Clip', na=False, case=False).sum()
+            ws.write(35, 0, 'TEER Edwards (Pascal) Anteil', cell_f)
+            ws.write(35, 1, edwards/total_teer if total_teer > 0 else 0, pct_f)
 
             # 6. HISTORIE
-            ws.write('A39', '6. HISTORISCHE ENTWICKLUNG', title_f)
+            ws.write('A40', '6. HISTORISCHE ENTWICKLUNG', title_f)
             h_cats = ['TAVI', 'MTEER', 'TTEER']
-            for c, h in enumerate(['Jahr'] + h_cats): ws.write(40, c, h, header_f)
+            for c, h in enumerate(['Jahr'] + h_cats): ws.write(41, c, h, header_f)
             for r, y in enumerate([2022, 2023, 2024, 2025, 2026]):
-                ws.write(41+r, 0, y, cell_f)
+                ws.write(42+r, 0, y, cell_f)
                 for i, cat in enumerate(h_cats):
-                    ws.write(41+r, i+1, len(df[(df['Year'] == y) & (df['KPI_Kat'] == cat)]), cell_f)
+                    ws.write(42+r, i+1, len(df[(df['Year'] == y) & (df['KPI_Kat'] == cat)]), cell_f)
 
             ws.set_column('A:A', 36); ws.set_column('B:M', 6.8); ws.set_column('N:Q', 13)
 
-        st.success("✅ Dashboard erfolgreich generiert!")
+        st.success("✅ Dashboard vollständig generiert!")
         st.download_button(
             label="📊 Dashboard herunterladen",
             data=output.getvalue(),
@@ -125,4 +131,4 @@ if uploaded_file:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
     except Exception as e:
-        st.error(f"Fehler: {e}. Stellen Sie sicher, dass das Tabellenblatt 'Daten' heißt.")
+        st.error(f"Fehler: {e}. Prüfen Sie den Tabellenblatt-Namen 'Daten'.")
