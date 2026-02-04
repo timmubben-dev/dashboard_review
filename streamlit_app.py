@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import io
 import msoffcrypto
-import altair as alt
+import xlsxwriter
 from datetime import datetime
 
 # 1. SEITEN-KONFIGURATION
@@ -16,12 +16,13 @@ password = st.sidebar.text_input("Bitte Excel-Passwort eingeben", type="password
 uploaded_file = st.sidebar.file_uploader("Verschlüsselte Excel-Datei wählen", type=["xlsx"])
 
 def map_to_kpi(e):
-    e = str(e).lower()
+    if pd.isna(e): return 'Sonstige'
+    e = str(e).lower().strip()
     if 'tavi' in e: return 'TAVI'
-    if 'edge-to-edge mk' in e or 'tmvi' in e: return 'MTEER'
-    if 'edge-to-edge tk' in e or 'htp tk' in e: return 'TTEER'
+    if any(x in e for x in ['edge-to-edge mk', 'tmvi', 'mteer']): return 'MTEER'
+    if any(x in e for x in ['edge-to-edge tk', 'htp tk', 'tteer']): return 'TTEER'
     if 'ttvi' in e: return 'TTVI'
-    if 'tricvalve' in e or 'ttvr' in e: return 'TTVR'
+    if any(x in e for x in ['tricvalve', 'ttvr']): return 'TTVR'
     return 'Sonstige'
 
 if uploaded_file and password:
@@ -44,7 +45,7 @@ if uploaded_file and password:
         df['VWD_num'] = pd.to_numeric(df['VWD'], errors='coerce')
         
         df_2026 = df[df['Year'] == 2026].copy()
-        months_passed = df_2026['Month'].max() or 1
+        months_passed = int(df_2026['Month'].max()) if not df_2026.empty else 1
         heute_str = datetime.now().strftime('%d-%m-%Y')
 
         # --- STREAMLIT VORSCHAU ---
@@ -79,7 +80,7 @@ if uploaded_file and password:
                     val = counts.get(m, 0)
                     fmt = red_f if (val < t_mo and m <= months_passed) else cell_f
                     ws.write(r+3, m, val, fmt)
-                ist_y = len(c_df); prog = round((ist_y / months_passed) * 12)
+                ist_y = len(c_df); prog = round((ist_y / months_passed) * 12) if months_passed > 0 else 0
                 ws.write(r+3, 13, ist_y, cell_f); ws.write(r+3, 14, prog, cell_f)
                 ws.write(r+3, 15, t_mo * 12, cell_f)
                 ws.write_formula(r+3, 16, f'=IFERROR(O{r+4}/P{r+4}, 0)', pct_f)
@@ -105,20 +106,23 @@ if uploaded_file and password:
                 ks_c = df[df['Year'] == y]['KS_bool'].sum()
                 ws.write(curr_r+1+i, 0, y, cell_f); ws.write(curr_r+1+i, 1, ks_c, cell_f)
 
-            # --- PUNKT 4: STRATEGIE (EVOLUT & PASCAL/CLIP) ---
+            # --- PUNKT 4: STRATEGIE (EVOLUT & PASCAL-ANTEIL) ---
             curr_r = 21
             ws.write(curr_r, 0, '4. STRATEGIE: DEVICE-MIX 2026', title_f)
+            
+            # Evolut Anteil
             tavi_26 = df_2026[df_2026['KPI_Kat'] == 'TAVI']
             ev_r = tavi_26['Device'].str.contains('Evolut', na=False, case=False).mean() if len(tavi_26) > 0 else 0
             ws.write(curr_r+1, 0, 'Evolut-Anteil (TAVI) - Ziel 80%', cell_f); ws.write(curr_r+1, 1, ev_r, pct_f)
 
-            # Verhältnis Pascal vs Clip (TEER)
+            # Pascal Anteil (TEER) - Jetzt als ein Bruch/Anteil dargestellt
             teer_26 = df_2026[df_2026['KPI_Kat'].isin(['MTEER', 'TTEER'])]
             pascal = teer_26['Device'].str.contains('Pascal', na=False, case=False).sum()
             clip = teer_26['Device'].str.contains('Clip', na=False, case=False).sum()
-            ws.write(curr_r+2, 0, 'Pascal (Edwards) Anzahl', cell_f); ws.write(curr_r+2, 1, pascal, cell_f)
-            ws.write(curr_r+3, 0, 'Clip (Abbott) Anzahl', cell_f); ws.write(curr_r+3, 1, clip, cell_f)
-            ws.write(curr_r+4, 0, 'Verhältnis Pascal (%)', cell_f); ws.write(curr_r+4, 1, pascal/(pascal+clip) if (pascal+clip)>0 else 0, pct_f)
+            pascal_ratio = pascal / (pascal + clip) if (pascal + clip) > 0 else 0
+            
+            ws.write(curr_r+2, 0, 'Pascal-Anteil (TEER: TriClip/MitraClip)', cell_f)
+            ws.write(curr_r+2, 1, pascal_ratio, pct_f)
 
             # --- PUNKT 5: TEAMS ---
             curr_r = 28
@@ -129,27 +133,67 @@ if uploaded_file and password:
                 ws.write(curr_r+2+i, 0, row[0], cell_f); ws.write(curr_r+2+i, 1, row[1], cell_f)
                 ws.write(curr_r+2+i, 2, row[1]/len(tavi_26) if len(tavi_26) > 0 else 0, pct_f)
 
-            # --- PUNKT 6: KOMPLIKATIONEN & BENCHMARKS ---
+            # --- PUNKT 6: KOMPLIKATIONEN ---
             curr_r = 37
             ws.write(curr_r, 0, '6. QUALITÄT & KOMPLIKATIONSRATEN 2026', title_f)
-            comp_dict = {
-                'Tod w. Aufenth.': ['Mortalität', 0.02],
-                'Stroke': ['Apoplex', 0.015],
-                'SM_neu': ['Schrittmacher', 0.10],
-                'Gefäß_Kom.': ['Gefäßkompl.', 0.05]
-            }
+            comp_dict = {'Tod w. Aufenth.': ['Mortalität', 0.02], 'Stroke': ['Apoplex', 0.015], 'SM_neu': ['Schrittmacher', 0.10], 'Gefäß_Kom.': ['Gefäßkompl.', 0.05]}
             for c, h in enumerate(['Indikator', 'Fälle', 'Rate %', 'Benchmark']): ws.write(curr_r+1, c, h, header_f)
             for i, (col, lab_bench) in enumerate(comp_dict.items()):
                 val = pd.to_numeric(df_2026[col], errors='coerce').fillna(0).sum()
                 rate = val / len(df_2026) if len(df_2026) > 0 else 0
-                ws.write(curr_r+2+i, 0, lab_bench[0], cell_f)
-                ws.write(curr_r+2+i, 1, val, cell_f)
+                ws.write(curr_r+2+i, 0, lab_bench[0], cell_f); ws.write(curr_r+2+i, 1, val, cell_f)
                 ws.write(curr_r+2+i, 2, rate, green_f if rate <= lab_bench[1] else red_f)
                 ws.write(curr_r+2+i, 3, lab_bench[1], pct_f)
 
+            # --- PUNKT 7: VERLAUF 2021-2026 (GRAFIK & DATEN) ---
+            curr_r = 46
+            ws.write(curr_r, 0, '7. VERLAUF DER FALLZAHLEN 2021 - 2026', title_f)
+            
+            years_list = [2021, 2022, 2023, 2024, 2025, 2026]
+            headers_trend = ['Jahr', 'TAVI (Gesamt)', 'TEER (M+T)', 'Prozeduren Gesamt']
+            for c, h in enumerate(headers_trend): ws.write(curr_r+1, c, header_f)
+            
+            trend_data = []
+            for i, y in enumerate(years_list):
+                y_df = df[df['Year'] == y]
+                tavi_count = len(y_df[y_df['KPI_Kat'] == 'TAVI'])
+                teer_count = len(y_df[y_df['KPI_Kat'].isin(['MTEER', 'TTEER'])])
+                total_count = len(y_df)
+                
+                ws.write(curr_r+2+i, 0, y, cell_f)
+                ws.write(curr_r+2+i, 1, tavi_count, cell_f)
+                ws.write(curr_r+2+i, 2, teer_count, cell_f)
+                ws.write(curr_r+2+i, 3, total_count, cell_f)
+            
+            # Excel Chart hinzufügen
+            chart = workbook.add_chart({'type': 'line'})
+            chart.add_series({
+                'name':       ['Master Dashboard', curr_r+1, 1],
+                'categories': ['Master Dashboard', curr_r+2, 0, curr_r+7, 0],
+                'values':     ['Master Dashboard', curr_r+2, 1, curr_r+7, 1],
+                'marker':     {'type': 'circle', 'size': 5},
+            })
+            chart.add_series({
+                'name':       ['Master Dashboard', curr_r+1, 2],
+                'categories': ['Master Dashboard', curr_r+2, 0, curr_r+7, 0],
+                'values':     ['Master Dashboard', curr_r+2, 2, curr_r+7, 2],
+                'marker':     {'type': 'square', 'size': 5},
+            })
+            chart.add_series({
+                'name':       ['Master Dashboard', curr_r+1, 3],
+                'categories': ['Master Dashboard', curr_r+2, 0, curr_r+7, 0],
+                'values':     ['Master Dashboard', curr_r+2, 3, curr_r+7, 3],
+                'line':       {'dash_type': 'dash'},
+            })
+            chart.set_title({'name': 'Entwicklung 2021-2026'})
+            chart.set_x_axis({'name': 'Jahr'})
+            chart.set_y_axis({'name': 'Anzahl Fälle'})
+            chart.set_legend({'position': 'bottom'})
+            ws.insert_chart(curr_r+2, 5, chart, {'x_scale': 1.5, 'y_scale': 1.2})
+
             ws.set_column('A:A', 35); ws.set_column('B:Q', 12)
 
-        st.success("✅ Dashboard vollständig generiert!")
+        st.success("✅ Dashboard mit Trend-Analyse 2021-2026 generiert!")
         st.download_button(label="📊 Master-Dashboard herunterladen", data=output.getvalue(), file_name=f"Herzklappen_Master_{heute_str}.xlsx")
 
     except Exception as e:
