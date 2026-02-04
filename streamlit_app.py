@@ -31,7 +31,7 @@ if uploaded_file and password:
         office_file = msoffcrypto.OfficeFile(uploaded_file)
         office_file.load_key(password=password)
         office_file.decrypt(decrypted_file)
-        decrypted_file.seek(0) # WICHTIG: Zurück zum Anfang
+        decrypted_file.seek(0)
 
         # --- DATEN LADEN ---
         df = pd.read_excel(decrypted_file, sheet_name='Daten', skiprows=5, engine='openpyxl')
@@ -53,129 +53,125 @@ if uploaded_file and password:
             workbook = writer.book
             ws = workbook.add_worksheet('Master Dashboard')
             
-            # Formate definieren
-            title_f = workbook.add_format({'bold': True, 'size': 12, 'font_color': '#1F4E78', 'bottom': 2})
-            header_f = workbook.add_format({'bold': True, 'bg_color': '#D9E1F2', 'border': 1, 'align': 'center'})
-            cell_f = workbook.add_format({'border': 1, 'align': 'center'})
-            bold_cell_f = workbook.add_format({'bold': True, 'border': 1, 'align': 'center'})
-            pct_f = workbook.add_format({'num_format': '0.0%', 'border': 1, 'align': 'center'})
-            red_f = workbook.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006', 'border': 1, 'align': 'center'})
-            green_f = workbook.add_format({'bg_color': '#C6EFCE', 'font_color': '#006100', 'border': 1, 'align': 'center'})
-            num_f = workbook.add_format({'num_format': '0.0', 'border': 1, 'align': 'center'})
+            # ALLE FORMATE VORAB DEFINIEREN
+            f_title = workbook.add_format({'bold': True, 'size': 12, 'font_color': '#1F4E78', 'bottom': 2})
+            f_header = workbook.add_format({'bold': True, 'bg_color': '#D9E1F2', 'border': 1, 'align': 'center'})
+            f_cell = workbook.add_format({'border': 1, 'align': 'center'})
+            f_bold_cell = workbook.add_format({'bold': True, 'border': 1, 'align': 'left'})
+            f_pct = workbook.add_format({'num_format': '0.0%', 'border': 1, 'align': 'center'})
+            f_red = workbook.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006', 'border': 1, 'align': 'center'})
+            f_green = workbook.add_format({'bg_color': '#C6EFCE', 'font_color': '#006100', 'border': 1, 'align': 'center'})
+            f_num = workbook.add_format({'num_format': '0.0', 'border': 1, 'align': 'center'})
 
             # --- 1. LEISTUNGSZAHLEN ---
-            ws.write(0, 0, '1. LEISTUNGSZAHLEN & PROGNOSE 2026', title_f)
+            ws.write(0, 0, '1. LEISTUNGSZAHLEN & PROGNOSE 2026', f_title)
             targets = {'TAVI': 46, 'MTEER': 10, 'TTEER': 7, 'TTVI': 3, 'TTVR': 1}
-            headers = ['Kategorie'] + ['Jan','Feb','Mrz','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'] + ['YTD','Prognose','Soll','Status']
-            for c, h in enumerate(headers): 
-                ws.write(2, c, h, header_f)
+            headers = ['Kategorie', 'Jan','Feb','Mrz','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez', 'YTD','Prognose','Soll','Status']
+            for c, h in enumerate(headers):
+                ws.write(2, c, h, f_header)
             
             for r, (cat, t_mo) in enumerate(targets.items()):
                 c_df = df_2026[df_2026['KPI_Kat'] == cat]
                 counts = c_df.groupby('Month').size()
-                ws.write(r+3, 0, cat, bold_cell_f) # Fix: bold_cell_f statt direktes Objekt
+                ws.write(r+3, 0, cat, f_bold_cell)
                 for m in range(1, 13):
-                    val = counts.get(m, 0)
-                    fmt = red_f if (val < t_mo and m <= months_passed) else cell_f
+                    val = int(counts.get(m, 0))
+                    fmt = f_red if (val < t_mo and m <= months_passed) else f_cell
                     ws.write(r+3, m, val, fmt)
                 
                 ist_y = len(c_df)
                 prog = round((ist_y / months_passed) * 12) if months_passed > 0 else 0
-                ws.write(r+3, 13, ist_y, cell_f)
-                ws.write(r+3, 14, prog, cell_f)
-                ws.write(r+3, 15, t_mo * 12, cell_f)
-                ws.write_formula(r+3, 16, f'=IFERROR(O{r+4}/P{r+4}, 0)', pct_f)
+                ws.write(r+3, 13, ist_y, f_cell)
+                ws.write(r+3, 14, prog, f_cell)
+                ws.write(r+3, 15, t_mo * 12, f_cell)
+                ws.write_formula(r+3, 16, f'=IFERROR(O{r+4}/P{r+4}, 0)', f_pct)
 
             # --- 2. VERWEILDAUER ---
             curr_r = 10
-            ws.write(curr_r, 0, '2. VERWEILDAUER (ZIEL: 5 TAGE MEDIAN)', title_f)
-            vwd_headers = ['Jahr', 'VWD Alle (Med)', 'VWD <21d (Mittel)', 'VWD <21d (Med)']
-            for c, h in enumerate(vwd_headers): 
-                ws.write(curr_r+1, c, h, header_f)
+            ws.write(curr_r, 0, '2. VERWEILDAUER (ZIEL: 5 TAGE MEDIAN)', f_title)
+            vwd_h = ['Jahr', 'VWD Alle (Med)', 'VWD <21d (Mittel)', 'VWD <21d (Med)']
+            for c, h in enumerate(vwd_h): ws.write(curr_r+1, c, h, f_header)
             for i, y in enumerate([2024, 2025, 2026]):
                 y_df = df[df['Year'] == y]
                 v_short = y_df[(y_df['VWD_num'] > 0) & (y_df['VWD_num'] < 21)]['VWD_num']
-                ws.write(curr_r+2+i, 0, y, cell_f)
-                ws.write(curr_r+2+i, 1, y_df[y_df['VWD_num'] > 0]['VWD_num'].median() if not y_df.empty else 0, cell_f)
-                ws.write(curr_r+2+i, 2, v_short.mean() if not v_short.empty else 0, num_f)
-                ms = v_short.median() if not v_short.empty else 0
-                ws.write(curr_r+2+i, 3, ms, green_f if 0 < ms <= 5 else cell_f)
+                ws.write(curr_r+2+i, 0, y, f_cell)
+                ws.write(curr_r+2+i, 1, float(y_df[y_df['VWD_num'] > 0]['VWD_num'].median()) if not y_df.empty else 0, f_cell)
+                ws.write(curr_r+2+i, 2, float(v_short.mean()) if not v_short.empty else 0, f_num)
+                ms = float(v_short.median()) if not v_short.empty else 0
+                ws.write(curr_r+2+i, 3, ms, f_green if 0 < ms <= 5 else f_cell)
 
             # --- 3. SPRECHSTUNDE ---
             curr_r = 17
-            ws.write(curr_r, 0, '3. ZUWEISUNG ÜBER KLAPPENSPRECHSTUNDE', title_f)
+            ws.write(curr_r, 0, '3. ZUWEISUNG ÜBER KLAPPENSPRECHSTUNDE', f_title)
             df['KS_bool'] = df['KS'].apply(lambda x: 1 if str(x).lower() in ['x', '1', 'ja'] else 0)
             for i, y in enumerate([2025, 2026]):
-                ks_c = df[df['Year'] == y]['KS_bool'].sum()
-                ws.write(curr_r+1+i, 0, y, cell_f)
-                ws.write(curr_r+1+i, 1, ks_c, cell_f)
+                ks_c = int(df[df['Year'] == y]['KS_bool'].sum())
+                ws.write(curr_r+1+i, 0, y, f_cell)
+                ws.write(curr_r+1+i, 1, ks_c, f_cell)
 
-            # --- 4. STRATEGIE (NUR ANTEILE) ---
+            # --- 4. STRATEGIE ---
             curr_r = 21
-            ws.write(curr_r, 0, '4. STRATEGIE: DEVICE-MIX 2026', title_f)
+            ws.write(curr_r, 0, '4. STRATEGIE: DEVICE-MIX 2026', f_title)
             tavi_26 = df_2026[df_2026['KPI_Kat'] == 'TAVI']
-            ev_r = tavi_26['Device'].str.contains('Evolut', na=False, case=False).mean() if len(tavi_26) > 0 else 0
-            ws.write(curr_r+1, 0, 'Evolut-Anteil (TAVI) - Ziel 80%', cell_f)
-            ws.write(curr_r+1, 1, ev_r, pct_f)
+            ev_r = float(tavi_26['Device'].str.contains('Evolut', na=False, case=False).mean()) if len(tavi_26) > 0 else 0
+            ws.write(curr_r+1, 0, 'Evolut-Anteil (TAVI) - Ziel 80%', f_cell)
+            ws.write(curr_r+1, 1, ev_r, f_pct)
 
             teer_26 = df_2026[df_2026['KPI_Kat'].isin(['MTEER', 'TTEER'])]
-            pascal = teer_26['Device'].str.contains('Pascal', na=False, case=False).sum()
-            clip = teer_26['Device'].str.contains('Clip', na=False, case=False).sum()
-            pascal_ratio = pascal / (pascal + clip) if (pascal + clip) > 0 else 0
-            ws.write(curr_r+2, 0, 'Pascal-Anteil (TEER: TriClip/MitraClip)', cell_f)
-            ws.write(curr_r+2, 1, pascal_ratio, pct_f)
+            pascal = int(teer_26['Device'].str.contains('Pascal', na=False, case=False).sum())
+            clip = int(teer_26['Device'].str.contains('Clip', na=False, case=False).sum())
+            p_ratio = pascal / (pascal + clip) if (pascal + clip) > 0 else 0
+            ws.write(curr_r+2, 0, 'Pascal-Anteil (TEER: TriClip/MitraClip)', f_cell)
+            ws.write(curr_r+2, 1, p_ratio, f_pct)
 
             # --- 5. TEAMS ---
             curr_r = 28
-            ws.write(curr_r, 0, '5. TAVI-TEAMS 2026', title_f)
+            ws.write(curr_r, 0, '5. TAVI-TEAMS 2026', f_title)
             t_stats = tavi_26['Team'].value_counts().reset_index()
-            for c, h in enumerate(['Team', 'Fälle', 'Anteil']): ws.write(curr_r+1, c, h, header_f)
+            for c, h in enumerate(['Team', 'Fälle', 'Anteil']): ws.write(curr_r+1, c, h, f_header)
             for i, row in enumerate(t_stats.values):
-                ws.write(curr_r+2+i, 0, row[0], cell_f)
-                ws.write(curr_r+2+i, 1, row[1], cell_f)
-                ws.write(curr_r+2+i, 2, row[1]/len(tavi_26) if len(tavi_26) > 0 else 0, pct_f)
+                ws.write(curr_r+2+i, 0, str(row[0]), f_cell)
+                ws.write(curr_r+2+i, 1, int(row[1]), f_cell)
+                ws.write(curr_r+2+i, 2, float(row[1]/len(tavi_26)) if len(tavi_26) > 0 else 0, f_pct)
 
             # --- 6. QUALITÄT ---
             curr_r = 37
-            ws.write(curr_r, 0, '6. QUALITÄT & KOMPLIKATIONSRATEN 2026', title_f)
+            ws.write(curr_r, 0, '6. QUALITÄT & KOMPLIKATIONSRATEN 2026', f_title)
             comp_dict = {'Tod w. Aufenth.': ['Mortalität', 0.02], 'Stroke': ['Apoplex', 0.015], 'SM_neu': ['Schrittmacher', 0.10], 'Gefäß_Kom.': ['Gefäßkompl.', 0.05]}
-            for c, h in enumerate(['Indikator', 'Fälle', 'Rate %', 'Benchmark']): ws.write(curr_r+1, c, h, header_f)
-            for i, (col, lab_bench) in enumerate(comp_dict.items()):
-                val = pd.to_numeric(df_2026[col], errors='coerce').fillna(0).sum()
+            for c, h in enumerate(['Indikator', 'Fälle', 'Rate %', 'Benchmark']): ws.write(curr_r+1, c, h, f_header)
+            for i, (col, lb) in enumerate(comp_dict.items()):
+                val = int(pd.to_numeric(df_2026[col], errors='coerce').fillna(0).sum())
                 rate = val / len(df_2026) if len(df_2026) > 0 else 0
-                ws.write(curr_r+2+i, 0, lab_bench[0], cell_f)
-                ws.write(curr_r+2+i, 1, val, cell_f)
-                ws.write(curr_r+2+i, 2, rate, green_f if rate <= lab_bench[1] else red_f)
-                ws.write(curr_r+2+i, 3, lab_bench[1], pct_f)
+                ws.write(curr_r+2+i, 0, lb[0], f_cell)
+                ws.write(curr_r+2+i, 1, val, f_cell)
+                ws.write(curr_r+2+i, 2, float(rate), f_green if rate <= lb[1] else f_red)
+                ws.write(curr_r+2+i, 3, float(lb[1]), f_pct)
 
-            # --- 7. HISTORISCHER VERLAUF 2021-2026 ---
+            # --- 7. VERLAUF ---
             curr_r = 46
-            ws.write(curr_r, 0, '7. VERLAUF DER FALLZAHLEN 2021 - 2026', title_f)
+            ws.write(curr_r, 0, '7. VERLAUF DER FALLZAHLEN 2021 - 2026', f_title)
             years = [2021, 2022, 2023, 2024, 2025, 2026]
-            for c, h in enumerate(['Jahr', 'TAVI', 'TEER', 'Gesamt']): 
-                ws.write(curr_r+1, c, header_f)
+            for c, h in enumerate(['Jahr', 'TAVI', 'TEER', 'Gesamt']): ws.write(curr_r+1, c, h, f_header)
             for i, y in enumerate(years):
                 y_df = df[df['Year'] == y]
-                ws.write(curr_r+2+i, 0, y, cell_f)
-                ws.write(curr_r+2+i, 1, len(y_df[y_df['KPI_Kat'] == 'TAVI']), cell_f)
-                ws.write(curr_r+2+i, 2, len(y_df[y_df['KPI_Kat'].isin(['MTEER', 'TTEER'])]), cell_f)
-                ws.write(curr_r+2+i, 3, len(y_df), cell_f)
+                ws.write(curr_r+2+i, 0, y, f_cell)
+                ws.write(curr_r+2+i, 1, int(len(y_df[y_df['KPI_Kat'] == 'TAVI'])), f_cell)
+                ws.write(curr_r+2+i, 2, int(len(y_df[y_df['KPI_Kat'].isin(['MTEER', 'TTEER'])])), f_cell)
+                ws.write(curr_r+2+i, 3, int(len(y_df)), f_cell)
             
-            # Grafik einfügen
             chart = workbook.add_chart({'type': 'line'})
             for col in range(1, 4):
                 chart.add_series({
                     'name':       ['Master Dashboard', curr_r+1, col],
                     'categories': ['Master Dashboard', curr_r+2, 0, curr_r+7, 0],
                     'values':     ['Master Dashboard', curr_r+2, col, curr_r+7, col],
-                    'marker':     {'type': 'circle', 'size': 4},
                 })
             ws.insert_chart(curr_r+2, 5, chart)
 
             ws.set_column('A:A', 35); ws.set_column('B:Q', 12)
 
-        st.success("✅ Dashboard erfolgreich generiert!")
-        st.download_button(label="📊 Master-Dashboard herunterladen", data=output.getvalue(), file_name=f"Herzklappen_Master_{heute_str}.xlsx")
+        st.success("✅ Dashboard generiert!")
+        st.download_button("📊 Download Excel", output.getvalue(), f"Herzklappen_{heute_str}.xlsx")
 
     except Exception as e:
-        st.error(f"❌ Fehler: {e}. Bitte prüfen Sie das Passwort und die Dateistruktur.")
+        st.error(f"❌ Fehler: {e}")
