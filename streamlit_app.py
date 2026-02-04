@@ -31,9 +31,7 @@ if uploaded_file and password:
         office_file = msoffcrypto.OfficeFile(uploaded_file)
         office_file.load_key(password=password)
         office_file.decrypt(decrypted_file)
-        
-        # WICHTIG: Zurück zum Anfang der Datei springen
-        decrypted_file.seek(0)
+        decrypted_file.seek(0) # WICHTIG: Zurück zum Anfang
 
         # --- DATEN LADEN ---
         df = pd.read_excel(decrypted_file, sheet_name='Daten', skiprows=5, engine='openpyxl')
@@ -55,29 +53,32 @@ if uploaded_file and password:
             workbook = writer.book
             ws = workbook.add_worksheet('Master Dashboard')
             
-            # Formate
+            # Formate definieren
             title_f = workbook.add_format({'bold': True, 'size': 12, 'font_color': '#1F4E78', 'bottom': 2})
             header_f = workbook.add_format({'bold': True, 'bg_color': '#D9E1F2', 'border': 1, 'align': 'center'})
             cell_f = workbook.add_format({'border': 1, 'align': 'center'})
+            bold_cell_f = workbook.add_format({'bold': True, 'border': 1, 'align': 'center'})
             pct_f = workbook.add_format({'num_format': '0.0%', 'border': 1, 'align': 'center'})
             red_f = workbook.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006', 'border': 1, 'align': 'center'})
             green_f = workbook.add_format({'bg_color': '#C6EFCE', 'font_color': '#006100', 'border': 1, 'align': 'center'})
             num_f = workbook.add_format({'num_format': '0.0', 'border': 1, 'align': 'center'})
 
-            # 1. LEISTUNGSZAHLEN
-            ws.write('A1', '1. LEISTUNGSZAHLEN & PROGNOSE 2026', title_f)
+            # --- 1. LEISTUNGSZAHLEN ---
+            ws.write(0, 0, '1. LEISTUNGSZAHLEN & PROGNOSE 2026', title_f)
             targets = {'TAVI': 46, 'MTEER': 10, 'TTEER': 7, 'TTVI': 3, 'TTVR': 1}
             headers = ['Kategorie'] + ['Jan','Feb','Mrz','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'] + ['YTD','Prognose','Soll','Status']
-            for c, h in enumerate(headers): ws.write(2, c, h, header_f)
+            for c, h in enumerate(headers): 
+                ws.write(2, c, h, header_f)
             
             for r, (cat, t_mo) in enumerate(targets.items()):
                 c_df = df_2026[df_2026['KPI_Kat'] == cat]
                 counts = c_df.groupby('Month').size()
-                ws.write(r+3, 0, cat, workbook.add_format({'bold': True, 'border': 1}))
+                ws.write(r+3, 0, cat, bold_cell_f) # Fix: bold_cell_f statt direktes Objekt
                 for m in range(1, 13):
                     val = counts.get(m, 0)
                     fmt = red_f if (val < t_mo and m <= months_passed) else cell_f
                     ws.write(r+3, m, val, fmt)
+                
                 ist_y = len(c_df)
                 prog = round((ist_y / months_passed) * 12) if months_passed > 0 else 0
                 ws.write(r+3, 13, ist_y, cell_f)
@@ -85,10 +86,11 @@ if uploaded_file and password:
                 ws.write(r+3, 15, t_mo * 12, cell_f)
                 ws.write_formula(r+3, 16, f'=IFERROR(O{r+4}/P{r+4}, 0)', pct_f)
 
-            # 2. VERWEILDAUER
+            # --- 2. VERWEILDAUER ---
             curr_r = 10
             ws.write(curr_r, 0, '2. VERWEILDAUER (ZIEL: 5 TAGE MEDIAN)', title_f)
-            for c, h in enumerate(['Jahr', 'VWD Alle (Med)', 'VWD <21d (Mittel)', 'VWD <21d (Med)']): 
+            vwd_headers = ['Jahr', 'VWD Alle (Med)', 'VWD <21d (Mittel)', 'VWD <21d (Med)']
+            for c, h in enumerate(vwd_headers): 
                 ws.write(curr_r+1, c, h, header_f)
             for i, y in enumerate([2024, 2025, 2026]):
                 y_df = df[df['Year'] == y]
@@ -99,7 +101,7 @@ if uploaded_file and password:
                 ms = v_short.median() if not v_short.empty else 0
                 ws.write(curr_r+2+i, 3, ms, green_f if 0 < ms <= 5 else cell_f)
 
-            # 3. SPRECHSTUNDE
+            # --- 3. SPRECHSTUNDE ---
             curr_r = 17
             ws.write(curr_r, 0, '3. ZUWEISUNG ÜBER KLAPPENSPRECHSTUNDE', title_f)
             df['KS_bool'] = df['KS'].apply(lambda x: 1 if str(x).lower() in ['x', '1', 'ja'] else 0)
@@ -108,7 +110,7 @@ if uploaded_file and password:
                 ws.write(curr_r+1+i, 0, y, cell_f)
                 ws.write(curr_r+1+i, 1, ks_c, cell_f)
 
-            # 4. STRATEGIE (ANTEILE ALS BRUCH)
+            # --- 4. STRATEGIE (NUR ANTEILE) ---
             curr_r = 21
             ws.write(curr_r, 0, '4. STRATEGIE: DEVICE-MIX 2026', title_f)
             tavi_26 = df_2026[df_2026['KPI_Kat'] == 'TAVI']
@@ -123,7 +125,7 @@ if uploaded_file and password:
             ws.write(curr_r+2, 0, 'Pascal-Anteil (TEER: TriClip/MitraClip)', cell_f)
             ws.write(curr_r+2, 1, pascal_ratio, pct_f)
 
-            # 5. TEAMS
+            # --- 5. TEAMS ---
             curr_r = 28
             ws.write(curr_r, 0, '5. TAVI-TEAMS 2026', title_f)
             t_stats = tavi_26['Team'].value_counts().reset_index()
@@ -133,7 +135,7 @@ if uploaded_file and password:
                 ws.write(curr_r+2+i, 1, row[1], cell_f)
                 ws.write(curr_r+2+i, 2, row[1]/len(tavi_26) if len(tavi_26) > 0 else 0, pct_f)
 
-            # 6. QUALITÄT
+            # --- 6. QUALITÄT ---
             curr_r = 37
             ws.write(curr_r, 0, '6. QUALITÄT & KOMPLIKATIONSRATEN 2026', title_f)
             comp_dict = {'Tod w. Aufenth.': ['Mortalität', 0.02], 'Stroke': ['Apoplex', 0.015], 'SM_neu': ['Schrittmacher', 0.10], 'Gefäß_Kom.': ['Gefäßkompl.', 0.05]}
@@ -146,11 +148,12 @@ if uploaded_file and password:
                 ws.write(curr_r+2+i, 2, rate, green_f if rate <= lab_bench[1] else red_f)
                 ws.write(curr_r+2+i, 3, lab_bench[1], pct_f)
 
-            # 7. VERLAUF 2021-2026
+            # --- 7. HISTORISCHER VERLAUF 2021-2026 ---
             curr_r = 46
             ws.write(curr_r, 0, '7. VERLAUF DER FALLZAHLEN 2021 - 2026', title_f)
             years = [2021, 2022, 2023, 2024, 2025, 2026]
-            for c, h in enumerate(['Jahr', 'TAVI', 'TEER', 'Gesamt']): ws.write(curr_r+1, c, header_f)
+            for c, h in enumerate(['Jahr', 'TAVI', 'TEER', 'Gesamt']): 
+                ws.write(curr_r+1, c, header_f)
             for i, y in enumerate(years):
                 y_df = df[df['Year'] == y]
                 ws.write(curr_r+2+i, 0, y, cell_f)
@@ -158,7 +161,7 @@ if uploaded_file and password:
                 ws.write(curr_r+2+i, 2, len(y_df[y_df['KPI_Kat'].isin(['MTEER', 'TTEER'])]), cell_f)
                 ws.write(curr_r+2+i, 3, len(y_df), cell_f)
             
-            # Chart
+            # Grafik einfügen
             chart = workbook.add_chart({'type': 'line'})
             for col in range(1, 4):
                 chart.add_series({
@@ -171,8 +174,8 @@ if uploaded_file and password:
 
             ws.set_column('A:A', 35); ws.set_column('B:Q', 12)
 
-        st.success("✅ Dashboard bereit!")
+        st.success("✅ Dashboard erfolgreich generiert!")
         st.download_button(label="📊 Master-Dashboard herunterladen", data=output.getvalue(), file_name=f"Herzklappen_Master_{heute_str}.xlsx")
 
     except Exception as e:
-        st.error(f"❌ Fehler: {e}. Bitte Passwort prüfen.")
+        st.error(f"❌ Fehler: {e}. Bitte prüfen Sie das Passwort und die Dateistruktur.")
